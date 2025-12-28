@@ -1,0 +1,95 @@
+import React, { useState } from 'react';
+import { supabase } from '../services/supabase';
+import { Button } from './ui/Button';
+import { useNavigate } from 'react-router-dom';
+
+export const Auth: React.FC = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        navigate('/');
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        alert('Check your email for the confirmation link!');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="h-[100dvh] w-full bg-dark-900 overflow-y-auto">
+      <div className="min-h-full flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md bg-dark-800 border border-dark-700 rounded-2xl p-6 sm:p-8 shadow-2xl my-auto">
+          <div className="text-center mb-6 sm:mb-8">
+             <div className="w-12 h-12 bg-gradient-to-br from-brand-500 to-purple-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <span className="text-white font-bold text-xl">K</span>
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-2">{isLogin ? 'Welcome Back' : 'Create Account'}</h1>
+            <p className="text-gray-400">Enter your credentials to continue</p>
+          </div>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg mb-6 text-sm">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Email</label>
+              <input 
+                type="email" 
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-dark-900 border border-dark-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                placeholder="name@company.com"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Password</label>
+              <input 
+                type="password" 
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-dark-900 border border-dark-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <Button type="submit" className="w-full py-3" isLoading={loading}>
+              {isLogin ? 'Sign In' : 'Sign Up'}
+            </Button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button 
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-sm text-gray-500 hover:text-brand-500 transition-colors"
+            >
+              {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
