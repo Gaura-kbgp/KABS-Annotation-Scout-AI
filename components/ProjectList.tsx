@@ -3,17 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import { projectService } from '../services/projectService';
 import { Project, User } from '../types';
 import { Button } from './ui/Button';
-import { Plus, FileText, Clock, UploadCloud, Database, Trash2, Search, CheckCircle2, PencilRuler } from 'lucide-react';
+import { Plus, FileText, Clock, UploadCloud, Trash2, Search, CheckCircle2, PencilRuler, AlertTriangle, X } from 'lucide-react';
 
 export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Create Modal State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [creating, setCreating] = useState(false);
-  const [usingLocal, setUsingLocal] = useState(false);
+  
+  // Delete Modal State
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+  
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -21,9 +27,13 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
   }, [user]);
 
   const fetchProjects = async () => {
-    const { data, source } = await projectService.getProjects(user.id);
-    setProjects(data);
-    setUsingLocal(source === 'local');
+    setLoading(true);
+    const { data, error } = await projectService.getProjects(user.id);
+    if (error) {
+        setError("Could not load projects. Please check your connection.");
+    } else {
+        setProjects(data);
+    }
     setLoading(false);
   };
 
@@ -32,19 +42,33 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
     if (!newProjectName || !pdfFile) return;
 
     setCreating(true);
+    setError(null);
 
+    // 1. Upload the PDF file to Supabase Storage
+    const { publicUrl, error: uploadError } = await projectService.uploadProjectPdf(user.id, pdfFile);
+
+    if (uploadError) {
+      setError(`Storage Error: ${uploadError.message}. Please ensure you have created a public bucket named 'project-files' in your Supabase dashboard.`);
+      setCreating(false);
+      setIsCreateModalOpen(false); // Close modal to show error
+      return;
+    }
+
+    // 2. Create the Project Record
     const { data, error } = await projectService.createProject({ 
       name: newProjectName, 
       user_id: user.id,
       status: 'draft',
+      pdf_url: publicUrl || undefined,
       current_page: 1,
       total_pages: 1, 
       annotations: [] 
     });
 
     if (error) {
-      alert(`Failed to create project: ${error.message}`);
+      setError(`Failed to create project: ${error.message}`);
       setCreating(false);
+      setIsCreateModalOpen(false); // Close modal to show error
       return;
     }
 
@@ -53,10 +77,20 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this project?')) {
-        await projectService.deleteProject(id);
-        setProjects(prev => prev.filter(p => p.id !== id));
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    
+    // Optimistic UI update or wait for result? Let's wait for result to be safe.
+    const { error } = await projectService.deleteProject(projectToDelete);
+    
+    if (!error) {
+        setProjects(prev => prev.filter(p => p.id !== projectToDelete));
+        setProjectToDelete(null);
+        setError(null);
+    } else {
+        console.error(error);
+        setProjectToDelete(null);
+        setError(`Failed to delete project. Server Message: ${error.message}. Please ensure you have applied the DELETE policy in Supabase.`);
     }
   };
 
@@ -87,7 +121,7 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
                 onClick={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
-                  handleDeleteProject(project.id);
+                  setProjectToDelete(project.id);
                 }}
                 className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
                 title="Delete Project"
@@ -114,12 +148,6 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Projects</h1>
           <p className="text-gray-400">Manage your annotation projects</p>
-          {usingLocal && (
-            <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs border border-yellow-500/20">
-              <Database size={12} />
-              <span>Offline Mode (Database not connected)</span>
-            </div>
-          )}
         </div>
         
         <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
@@ -135,11 +163,24 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
               />
            </div>
            
-           <Button onClick={() => setIsModalOpen(true)} className="gap-2 shrink-0">
+           <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 shrink-0">
              <Plus size={18} /> New Project
            </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-900/20 border border-red-900/50 text-red-200 p-4 rounded-lg mb-8 flex items-start gap-3 relative">
+            <AlertTriangle size={20} className="shrink-0 mt-0.5" />
+            <div>
+                <p className="font-semibold">Error</p>
+                <p className="text-sm opacity-80 whitespace-pre-line">{error}</p>
+            </div>
+            <button onClick={() => setError(null)} className="absolute top-2 right-2 text-red-400 hover:text-red-200">
+                <X size={16} />
+            </button>
+        </div>
+      )}
 
       {loading ? (
          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -147,7 +188,7 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
              <div key={i} className="h-48 bg-dark-800 rounded-xl animate-pulse" />
            ))}
          </div>
-      ) : projects.length === 0 ? (
+      ) : projects.length === 0 && !error ? (
           // Total Empty State
           <div className="text-center py-20 bg-dark-800 rounded-2xl border border-dark-700 border-dashed">
             <div className="w-16 h-16 bg-dark-700 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-500">
@@ -155,7 +196,7 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
             </div>
             <h3 className="text-lg font-medium text-white mb-2">No projects yet</h3>
             <p className="text-gray-400 mb-6">Create your first project to start annotating.</p>
-            <Button variant="secondary" onClick={() => setIsModalOpen(true)}>Create Project</Button>
+            <Button variant="secondary" onClick={() => setIsCreateModalOpen(true)}>Create Project</Button>
           </div>
       ) : (
         <div className="space-y-12 pb-12">
@@ -204,9 +245,9 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
       )}
 
       {/* New Project Modal */}
-      {isModalOpen && (
+      {isCreateModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-dark-800 border border-dark-700 rounded-2xl w-full max-w-md p-6 shadow-2xl my-auto">
+          <div className="bg-dark-800 border border-dark-700 rounded-2xl w-full max-w-md p-6 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
             <h2 className="text-xl font-bold text-white mb-4">Create New Project</h2>
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div>
@@ -243,7 +284,7 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
                   type="button" 
                   variant="ghost" 
                   className="flex-1" 
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsCreateModalOpen(false)}
                 >
                   Cancel
                 </Button>
@@ -257,6 +298,38 @@ export const ProjectList: React.FC<{ user: User }> = ({ user }) => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {projectToDelete && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-dark-800 border border-dark-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
+             <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mb-4 text-red-500 mx-auto">
+                <Trash2 size={24} />
+             </div>
+             <h2 className="text-xl font-bold text-white mb-2 text-center">Delete Project?</h2>
+             <p className="text-gray-400 text-center text-sm mb-6">
+               Are you sure you want to delete this project? This action cannot be undone.
+             </p>
+             
+             <div className="flex gap-3">
+                <Button 
+                  variant="ghost" 
+                  className="flex-1" 
+                  onClick={() => setProjectToDelete(null)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  variant="danger" 
+                  className="flex-1"
+                  onClick={confirmDeleteProject}
+                >
+                  Delete
+                </Button>
+             </div>
           </div>
         </div>
       )}

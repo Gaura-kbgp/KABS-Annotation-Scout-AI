@@ -90,6 +90,7 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
     const init = async () => {
       if (!id) return;
       
+      // Fetch Project Data
       const { data, error } = await projectService.getProject(id);
         
       if (!isMounted) return;
@@ -110,11 +111,29 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
         setHistoryStep(0);
       }
 
-      const file = location.state?.file;
-      
-      if (file) {
+      // Handle PDF File Loading
+      // Priority 1: File from navigation state (fresh upload)
+      let fileToLoad = location.state?.file;
+
+      // Priority 2: Fetch from URL if state is missing (reload)
+      if (!fileToLoad && data.pdf_url) {
+         try {
+           setIsRendering(true);
+           const response = await fetch(data.pdf_url);
+           if (!response.ok) throw new Error("Failed to fetch PDF");
+           const blob = await response.blob();
+           fileToLoad = blob;
+         } catch (e) {
+           console.error("Failed to load PDF from URL", e);
+           // Don't set missing yet, fallback might work? No, this is the fallback.
+         } finally {
+            if(isMounted) setIsRendering(false);
+         }
+      }
+
+      if (fileToLoad) {
         try {
-          const doc = await loadPdfDocument(file);
+          const doc = await loadPdfDocument(fileToLoad);
           if (doc && isMounted) {
             setPdfDoc(doc);
             renderPage(doc, 1);
@@ -462,8 +481,8 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
         </div>
         <h1 className="text-2xl font-bold text-white mb-2">Session File Lost</h1>
         <p className="text-gray-400 max-w-md mb-8">
-          The PDF file is missing. This happens when the page is reloaded in this demo environment.
-          <br/>Please return to the dashboard and re-upload the file.
+          The PDF file is missing because it was not found in storage.
+          <br/>Please ensure you have created the 'project-files' bucket in Supabase.
         </p>
         <Button onClick={() => navigate('/projects')}>Return to Projects</Button>
       </div>

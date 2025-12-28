@@ -2,7 +2,7 @@ import { PdfPageImage } from '../types';
 
 declare const pdfjsLib: any;
 
-export const loadPdfDocument = async (file: File): Promise<any> => {
+export const loadPdfDocument = async (file: File | Blob): Promise<any> => {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });

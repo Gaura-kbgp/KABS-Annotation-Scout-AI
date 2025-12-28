@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { Button } from './ui/Button';
 import { useNavigate } from 'react-router-dom';
+import { CheckCircle2 } from 'lucide-react';
 
 export const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -9,12 +10,14 @@ export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       if (isLogin) {
@@ -24,7 +27,7 @@ export const Auth: React.FC = () => {
       } else {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        alert('Check your email for the confirmation link!');
+        setSuccessMessage('Registration successful! Please check your email for the confirmation link.');
       }
     } catch (err: any) {
       setError(err.message);
@@ -44,6 +47,13 @@ export const Auth: React.FC = () => {
             <h1 className="text-2xl font-bold text-white mb-2">{isLogin ? 'Welcome Back' : 'Create Account'}</h1>
             <p className="text-gray-400">Enter your credentials to continue</p>
           </div>
+
+          {successMessage && (
+            <div className="bg-green-500/10 border border-green-500/20 text-green-400 px-4 py-3 rounded-lg mb-6 text-sm flex items-start gap-2">
+              <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
+              <span>{successMessage}</span>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg mb-6 text-sm">
@@ -82,7 +92,11 @@ export const Auth: React.FC = () => {
 
           <div className="mt-6 text-center">
             <button 
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError(null);
+                setSuccessMessage(null);
+              }}
               className="text-sm text-gray-500 hover:text-brand-500 transition-colors"
             >
               {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}

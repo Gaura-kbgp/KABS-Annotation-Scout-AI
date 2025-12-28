@@ -119,31 +119,48 @@ export const Canvas: React.FC<CanvasProps> = ({
   useEffect(() => {
     const checkSize = () => {
       if (containerRef.current) {
+        // Use getBoundingClientRect for more accurate sub-pixel sizing and to avoid scrollbar issues
+        const rect = containerRef.current.getBoundingClientRect();
         setSize({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight
+          width: rect.width,
+          height: rect.height
         });
       }
     };
+    
     checkSize();
+    
+    // Check on resize and orientation change
+    window.addEventListener('resize', checkSize);
+    window.addEventListener('orientationchange', checkSize);
+    
     const observer = new ResizeObserver(checkSize);
     if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', checkSize);
+      window.removeEventListener('orientationchange', checkSize);
+    };
   }, []);
 
   useEffect(() => {
     if (size.width > 0 && size.height > 0 && pdfDimensions) {
-      // Responsive padding: less on mobile/tablet to maximize view
-      const isMobile = size.width < 768;
-      const padding = isMobile ? 12 : 40; 
+      // Responsive padding: minimize padding on mobile/tablet to maximize view
+      // On small screens, we want to use almost the entire space.
+      const isMobile = size.width < 1024; // Treat anything under lg as mobile/tablet for tight fitting
+      const padding = isMobile ? 8 : 32; 
       
-      const scaleW = (size.width - padding) / pdfDimensions.width;
-      const scaleH = (size.height - padding) / pdfDimensions.height;
+      const availWidth = size.width - padding;
+      const availHeight = size.height - padding;
+      
+      const scaleW = availWidth / pdfDimensions.width;
+      const scaleH = availHeight / pdfDimensions.height;
       
       // Use the smaller scale to fit whole page
       const newScale = Math.min(scaleW, scaleH);
       
-      // Center the PDF
+      // Center the PDF in the available space
       const newX = (size.width - pdfDimensions.width * newScale) / 2;
       const newY = (size.height - pdfDimensions.height * newScale) / 2;
       
