@@ -5,12 +5,12 @@ import { createClient } from '@supabase/supabase-js';
 // 1. ENDPOINT
 // This should point to your AWS EC2 Public IP or Domain.
 // Example: 'http://54.123.45.67:8000' or 'https://api.yourdomain.com'
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL;
+// 1. ENDPOINT
+// Hardcoded to ensure connection works even if Vite env vars fail
+const SUPABASE_URL = 'https://ecmltjcajtneflsyxuil.supabase.co';
 
 // 2. API KEY (ANON)
-// This must be the 'anon' key generated from your AWS instance's JWT_SECRET.
-// Do not use the SERVICE_ROLE_KEY here.
-const SUPABASE_ANON_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjbWx0amNhanRuZWZsc3l4dWlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1NjA0OTksImV4cCI6MjA4NDEzNjQ5OX0.4A3grp4owhpGLXgYd4b_be5G1MnoQmoOrQ5EOiW4SGI';
 
 // Safety Check & Fallback
 // If credentials are missing, we use a placeholder to prevent the app from crashing on load.
@@ -25,7 +25,18 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 // 3. INITIALIZE CLIENT
 // We provide a fallback URL to satisfy the Supabase client constructor if env vars are missing.
-export const supabase = createClient(
-  SUPABASE_URL || 'https://placeholder.supabase.co', 
-  SUPABASE_ANON_KEY || 'placeholder-key'
-);
+const effectiveUrl = SUPABASE_URL || 'https://placeholder.supabase.co';
+const effectiveKey = SUPABASE_ANON_KEY || 'placeholder-key';
+
+console.log('🔌 Initializing Supabase Client...');
+console.log('   URL:', effectiveUrl);
+if (!SUPABASE_URL) console.error('   ❌ VITE_SUPABASE_URL is missing! Using placeholder.');
+if (!SUPABASE_ANON_KEY) console.error('   ❌ VITE_SUPABASE_ANON_KEY is missing! Using placeholder.');
+
+export const supabase = createClient(effectiveUrl, effectiveKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});

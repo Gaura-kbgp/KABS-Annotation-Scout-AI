@@ -20,7 +20,7 @@ export const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl w-full">
         {/* Annotation Module */}
-        <motion.div 
+        <motion.div
           whileHover={{ y: -5 }}
           className="group relative bg-dark-800 border border-dark-700 rounded-2xl p-8 cursor-pointer overflow-hidden hover:border-brand-500/50 transition-all"
           onClick={() => navigate('/projects')}
@@ -39,23 +39,21 @@ export const Dashboard: React.FC = () => {
         </motion.div>
 
         {/* Pricing AI Module */}
-        <motion.div 
+        <motion.div
           whileHover={{ y: -5 }}
           className="group relative bg-dark-800 border border-dark-700 rounded-2xl p-8 cursor-pointer overflow-hidden hover:border-purple-500/50 transition-all"
-          onClick={() => navigate('/pricing-ai')}
+          onClick={() => navigate('/scout')}
         >
-          <div className="absolute top-4 right-4 bg-purple-500/20 text-purple-300 text-xs px-2 py-1 rounded-full border border-purple-500/30">
-            Coming Soon
-          </div>
+          <div className="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="w-12 h-12 bg-dark-700 rounded-xl flex items-center justify-center mb-6 text-purple-500 group-hover:scale-110 transition-transform">
             <Calculator size={24} />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Pricing AI Agent</h2>
+          <h2 className="text-2xl font-bold mb-2">Scout AI</h2>
           <p className="text-gray-400 mb-6">
-            Intelligent agent that estimates projects from PDF and Excel files.
+            Professional Architectural Visualization & Interior CAD AI - Convert 2D floor plans to colored presentation-ready plans.
           </p>
-          <div className="flex items-center text-purple-500 font-medium opacity-50">
-            Learn More <ArrowRight size={16} className="ml-2" />
+          <div className="flex items-center text-purple-500 font-medium">
+            Open Scout AI <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
           </div>
         </motion.div>
       </div>

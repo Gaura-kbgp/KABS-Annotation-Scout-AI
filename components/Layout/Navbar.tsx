@@ -14,6 +14,9 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
   const [showDropdown, setShowDropdown] = React.useState(false);
 
   const handleLogout = async () => {
+
+
+    // Sign out from Supabase
     await supabase.auth.signOut();
     navigate('/login');
   };
@@ -42,7 +45,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
             <span className="text-white font-bold text-lg">K</span>
           </div>
           <span className="text-lg font-semibold tracking-tight text-white">
-            KABS <span className="text-gray-400 font-normal">Annotation & Pricing AI</span>
+            KABS <span className="text-gray-400 font-normal">Annotation & Scout AI</span>
           </span>
         </div>
       </div>

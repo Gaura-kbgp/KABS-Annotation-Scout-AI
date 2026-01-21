@@ -34,7 +34,7 @@ export const projectService = {
   async getProjects(userId: string): Promise<{ data: Project[], error: any }> {
     const { data, error } = await supabase
       .from('projects')
-      .select('*')
+      .select('id, name, status, updated_at, created_at, pdf_url, user_id')
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
 
@@ -43,7 +43,7 @@ export const projectService = {
       return { data: [], error };
     }
 
-    return { data: data as Project[], error: null };
+    return { data: data as unknown as Project[], error: null };
   },
 
   /**
@@ -85,7 +85,7 @@ export const projectService = {
     if (error) {
       console.error('Error updating project:', error);
     }
-    
+
     return { error };
   },
 
@@ -103,16 +103,16 @@ export const projectService = {
     // 2. If PDF exists, try to delete from storage
     if (project?.pdf_url) {
       try {
-         // The URL structure depends on Supabase configuration.
-         // We assume standard structure and split by the bucket name 'project-files' to get the relative path.
-         const parts = project.pdf_url.split('/project-files/');
-         if (parts.length > 1) {
-             const path = decodeURIComponent(parts[1]);
-             await supabase.storage.from('project-files').remove([path]);
-         }
+        // The URL structure depends on Supabase configuration.
+        // We assume standard structure and split by the bucket name 'project-files' to get the relative path.
+        const parts = project.pdf_url.split('/project-files/');
+        if (parts.length > 1) {
+          const path = decodeURIComponent(parts[1]);
+          await supabase.storage.from('project-files').remove([path]);
+        }
       } catch (err) {
-         console.warn("Storage cleanup warning:", err);
-         // We continue with DB deletion even if storage cleanup fails
+        console.warn("Storage cleanup warning:", err);
+        // We continue with DB deletion even if storage cleanup fails
       }
     }
 

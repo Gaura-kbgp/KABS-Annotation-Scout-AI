@@ -11,18 +11,19 @@ import { Button } from '../ui/Button';
 import { jsPDF } from 'jspdf';
 import Konva from 'konva';
 
-export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
+export const EditorPage: React.FC<{ user: User }> = () => {
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const stageRef = useRef<any>(null); // Ref to access the Canvas stage for export
-  
+  const lastSavedShapes = useRef<ShapeConfig[]>([]); // Track saved state to prevent loop
+
   // Data State
   const [project, setProject] = useState<Project | null>(null);
   const [currentTool, setCurrentTool] = useState<ToolType>(ToolType.SELECT);
   const [shapes, setShapes] = useState<ShapeConfig[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  
+
   // Undo/Redo History
   // We store the entire shapes array in history for simplicity
   const [history, setHistory] = useState<ShapeConfig[][]>([]);
@@ -52,14 +53,14 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
     eraserSize: 20,
     unit: 'mm'
   });
-  
+
   // PDF State
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [bgImage, setBgImage] = useState<string>('');
-  const [pdfDimensions, setPdfDimensions] = useState<{width: number, height: number} | null>(null);
+  const [pdfDimensions, setPdfDimensions] = useState<{ width: number, height: number } | null>(null);
   const [isRendering, setIsRendering] = useState(false);
-  
+
   // UI State
   const [saving, setSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -67,11 +68,11 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
   const [fileMissing, setFileMissing] = useState(false);
   const [showProperties, setShowProperties] = useState(false); // Default closed on mobile, effect will open on desktop
   const [fitTrigger, setFitTrigger] = useState(0);
-  
+
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportName, setExportName] = useState('');
-  
+
   // Canvas View State
   const [stageScale, setStageScale] = useState(1);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
@@ -79,7 +80,7 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
   // Init Properties panel state based on screen size
   useEffect(() => {
     if (window.innerWidth >= 1024) { // Only auto-open on Large screens
-        setShowProperties(true);
+      setShowProperties(true);
     }
   }, []);
 
@@ -89,10 +90,10 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
 
     const init = async () => {
       if (!id) return;
-      
+
       // Fetch Project Data
       const { data, error } = await projectService.getProject(id);
-        
+
       if (!isMounted) return;
 
       if (error || !data) {
@@ -100,15 +101,18 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
         navigate('/projects');
         return;
       }
-      
+
       setProject(data);
       if (data.annotations) {
         setShapes(data.annotations);
         setHistory([data.annotations]);
         setHistoryStep(0);
+        // Initialize dirty tracking
+        lastSavedShapes.current = data.annotations;
       } else {
         setHistory([[]]);
         setHistoryStep(0);
+        lastSavedShapes.current = [];
       }
 
       // Handle PDF File Loading
@@ -117,18 +121,18 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
 
       // Priority 2: Fetch from URL if state is missing (reload)
       if (!fileToLoad && data.pdf_url) {
-         try {
-           setIsRendering(true);
-           const response = await fetch(data.pdf_url);
-           if (!response.ok) throw new Error("Failed to fetch PDF");
-           const blob = await response.blob();
-           fileToLoad = blob;
-         } catch (e) {
-           console.error("Failed to load PDF from URL", e);
-           // Don't set missing yet, fallback might work? No, this is the fallback.
-         } finally {
-            if(isMounted) setIsRendering(false);
-         }
+        try {
+          setIsRendering(true);
+          const response = await fetch(data.pdf_url);
+          if (!response.ok) throw new Error("Failed to fetch PDF");
+          const blob = await response.blob();
+          fileToLoad = blob;
+        } catch (e) {
+          console.error("Failed to load PDF from URL", e);
+          // Don't set missing yet, fallback might work? No, this is the fallback.
+        } finally {
+          if (isMounted) setIsRendering(false);
+        }
       }
 
       if (fileToLoad) {
@@ -146,7 +150,7 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
         if (isMounted) setFileMissing(true);
       }
     };
-    
+
     init();
 
     return () => { isMounted = false; };
@@ -167,9 +171,9 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
       // Undo: Ctrl+Z
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         if (e.shiftKey) {
-           handleRedo();
+          handleRedo();
         } else {
-           handleUndo();
+          handleUndo();
         }
       }
       // Redo: Ctrl+Y
@@ -200,21 +204,33 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
     }
   };
 
+
   // Auto-save
   useEffect(() => {
     if (!project) return;
+
+    // Check if shapes differ from what we believe is in DB
+    if (shapes === lastSavedShapes.current) return;
+
     const timeout = setTimeout(async () => {
-      if (shapes.length > 0) {
-        setSaving(true);
-        // Autosave keeps status as is (likely 'draft', or 'saved' if already saved)
-        await projectService.updateProject(project.id, { 
-          annotations: shapes,
-          updated_at: new Date().toISOString()
-        });
-        setSaving(false);
+      setSaving(true);
+      // Auto-save: Update annotations ONLY. Keep status as is (likely 'draft').
+      const { error } = await projectService.updateProject(project.id, {
+        annotations: shapes,
+        updated_at: new Date().toISOString()
+      });
+
+      if (error) {
+        console.error("Auto-save failed:", error);
+      } else {
+        // Sync successful
+        lastSavedShapes.current = shapes;
         setLastSaved(new Date());
+        // Do NOT update status to 'saved' on auto-save
       }
-    }, 2000);
+      setSaving(false);
+    }, 1000); // 1s Debounce
+
     return () => clearTimeout(timeout);
   }, [shapes, project]);
 
@@ -247,20 +263,20 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
   const handleShapeAdd = (newShape: ShapeConfig) => {
     const newShapes = [...shapes, newShape];
     pushToHistory(newShapes);
-    
+
     if (newShape.type === ToolType.TEXT) {
       setSelectedId(newShape.id);
     } else {
       // Don't auto-select eraser lines or other tools if not needed
       if (newShape.type !== ToolType.ERASER && newShape.type !== ToolType.PEN) {
-          setSelectedId(null);
+        setSelectedId(null);
       }
     }
   };
 
   const handleShapeUpdate = (id: string, newAttrs: Partial<ShapeConfig>, addToHistory: boolean = true) => {
     const updatedShapes = shapes.map(shape => shape.id === id ? { ...shape, ...newAttrs } : shape);
-    
+
     if (addToHistory) {
       pushToHistory(updatedShapes);
     } else {
@@ -277,9 +293,9 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
     if (newAttrs.dash !== undefined) stylesToSync.dash = newAttrs.dash;
     if (newAttrs.fontSize !== undefined) stylesToSync.fontSize = newAttrs.fontSize;
     if (newAttrs.unit !== undefined) stylesToSync.unit = newAttrs.unit;
-    
+
     if (Object.keys(stylesToSync).length > 0 && selectedId === id) {
-        setDefaultStyles(prev => ({ ...prev, ...stylesToSync }));
+      setDefaultStyles(prev => ({ ...prev, ...stylesToSync }));
     }
   };
 
@@ -293,181 +309,269 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
   const handleSaveProject = async () => {
     if (!project) return;
     setSaving(true);
-    // Explicitly set status to 'saved' when clicking the Save button
-    await projectService.updateProject(project.id, { 
+    const { error } = await projectService.updateProject(project.id, {
       annotations: shapes,
       status: 'saved',
       updated_at: new Date().toISOString()
     });
-    
-    // Update local state to reflect change immediately
-    setProject(prev => prev ? ({ ...prev, status: 'saved' }) : null);
-    
+
+    if (error) {
+      console.error("Manual save failed:", error);
+      alert(`Failed to save project: ${error.message || 'Unknown error'}`);
+    } else {
+      // Update local state to reflect change immediately
+      setProject(prev => prev ? ({ ...prev, status: 'saved' }) : null);
+      setLastSaved(new Date());
+      // Use a small notification instead of alert if possible, but alert is robust
+      // alert('Project saved successfully!'); 
+    }
     setSaving(false);
-    setLastSaved(new Date());
   };
 
   // Open Export Modal
   const openExportModal = () => {
     if (!stageRef.current) {
-        console.error("Stage not ready");
-        return;
+      console.error("Stage not ready");
+      return;
     }
     if (!pdfDoc) {
-        alert("Please wait for the document to fully load before exporting.");
-        return;
+      alert("Please wait for the document to fully load before exporting.");
+      return;
     }
     setExportName(project ? `${project.name}-export` : 'design-export');
     setShowExportModal(true);
   };
 
+  // Helpers for Export Rendering
+  const getDistance = (pts: number[]) => {
+    if (!pts || pts.length < 4) return 0;
+    const dx = pts[2] - pts[0];
+    const dy = pts[3] - pts[1];
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const getMeasurementLabel = (dist: number, unit?: string) => {
+    const PPI = 72;
+    const inches = dist / PPI;
+    switch (unit) {
+      case 'ft': return `${(inches / 12).toFixed(2)} ft`;
+      case 'cm': return `${(inches * 2.54).toFixed(2)} cm`;
+      case 'in': return `${inches.toFixed(2)} in`;
+      case 'mm': default: return `${(inches * 25.4).toFixed(0)} mm`;
+    }
+  };
+
+  const calculateAngleData = (pts: number[]) => {
+    if (!pts || pts.length < 6) return { angle: 0, rotation: 0, labelX: 0, labelY: 0, v: { x: 0, y: 0 }, p1: { x: 0, y: 0 }, p3: { x: 0, y: 0 } };
+    const p1 = { x: pts[0], y: pts[1] };
+    const v = { x: pts[2], y: pts[3] };
+    const p3 = { x: pts[4], y: pts[5] };
+    const angle1 = Math.atan2(p1.y - v.y, p1.x - v.x);
+    const angle2 = Math.atan2(p3.y - v.y, p3.x - v.x);
+    let angleDeg = (angle2 - angle1) * (180 / Math.PI);
+    if (angleDeg < 0) angleDeg += 360;
+    let bisectorRad = angle1 + (angleDeg * Math.PI / 180) / 2;
+    const labelDist = 45;
+    const labelX = v.x + Math.cos(bisectorRad) * labelDist;
+    const labelY = v.y + Math.sin(bisectorRad) * labelDist;
+    const rotation = angle1 * (180 / Math.PI);
+    return { angle: angleDeg, rotation: rotation, labelX, labelY, v, p1, p3 };
+  };
+
   // Reusable helper to replicate React-Konva rendering in vanilla Konva
   const addShapesToLayer = (layer: Konva.Layer, pageShapes: ShapeConfig[]) => {
-      const hexToRgba = (hex: string, alpha: number) => {
-        if (!hex || hex === 'transparent') return 'transparent';
-        let c: any;
-        if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
-            c= hex.substring(1).split('');
-            if(c.length== 3){
-                c= [c[0], c[0], c[1], c[1], c[2], c[2]];
-            }
-            c= '0x'+c.join('');
-            return 'rgba('+[(c>>16)&255, (c>>8)&255, c&255].join(',')+','+alpha+')';
+    const hexToRgba = (hex: string, alpha: number) => {
+      if (!hex || hex === 'transparent') return 'transparent';
+      let c: any;
+      if (/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)) {
+        c = hex.substring(1).split('');
+        if (c.length == 3) {
+          c = [c[0], c[0], c[1], c[1], c[2], c[2]];
         }
-        return hex;
+        c = '0x' + c.join('');
+        return 'rgba(' + [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(',') + ',' + alpha + ')';
+      }
+      return hex;
+    }
+
+    pageShapes.forEach(shape => {
+      if (!shape.visible) return;
+
+      const commonProps: any = {
+        stroke: shape.stroke,
+        strokeWidth: shape.strokeWidth,
+        dash: shape.dash,
+        opacity: shape.opacity,
+      };
+
+      if (shape.globalCompositeOperation) {
+        commonProps.globalCompositeOperation = shape.globalCompositeOperation;
       }
 
-      pageShapes.forEach(shape => {
-          if(!shape.visible) return;
-
-          const commonProps: any = {
-             stroke: shape.stroke,
-             strokeWidth: shape.strokeWidth,
-             dash: shape.dash,
-             opacity: shape.opacity,
-          };
-          
-          if (shape.globalCompositeOperation) {
-              commonProps.globalCompositeOperation = shape.globalCompositeOperation;
-          }
-
-          if (shape.type === ToolType.RECTANGLE) {
-              layer.add(new Konva.Rect({
-                  ...commonProps,
-                  x: shape.x, y: shape.y, width: shape.width || 0, height: shape.height || 0,
-                  fill: hexToRgba(shape.fill, shape.opacity),
-                  opacity: 1
-              }));
-          } else if (shape.type === ToolType.ELLIPSE) {
-              const rx = Math.abs(shape.width || 0) / 2;
-              const ry = Math.abs(shape.height || 0) / 2;
-              layer.add(new Konva.Ellipse({
-                  ...commonProps,
-                  x: shape.x + (shape.width || 0) / 2,
-                  y: shape.y + (shape.height || 0) / 2,
-                  radiusX: rx, radiusY: ry,
-                  fill: hexToRgba(shape.fill, shape.opacity),
-                  opacity: 1
-              }));
-          } else if (shape.type === ToolType.LINE || shape.type === ToolType.PEN || shape.type === ToolType.ERASER) {
-              layer.add(new Konva.Line({
-                  ...commonProps,
-                  points: shape.points || [],
-                  lineCap: 'round', lineJoin: 'round',
-                  tension: shape.type === ToolType.PEN ? 0.5 : 0
-              }));
-          } else if (shape.type === ToolType.ARROW) {
-              layer.add(new Konva.Arrow({
-                  ...commonProps,
-                  points: shape.points || [],
-                  fill: shape.stroke,
-                  pointerLength: 10, pointerWidth: 10
-              }));
-          } else if (shape.type === ToolType.TEXT) {
-               layer.add(new Konva.Text({
-                   x: shape.x, y: shape.y,
-                   text: shape.text || '',
-                   fontSize: shape.fontSize || 16,
-                   fontFamily: shape.fontFamily || 'Inter',
-                   fontStyle: shape.fontStyle || 'normal',
-                   fill: shape.fill !== 'transparent' ? shape.fill : shape.stroke,
-                   opacity: shape.opacity
-               }));
-          }
-      });
+      if (shape.type === ToolType.RECTANGLE) {
+        layer.add(new Konva.Rect({
+          ...commonProps,
+          x: shape.x, y: shape.y, width: shape.width || 0, height: shape.height || 0,
+          fill: hexToRgba(shape.fill, shape.opacity),
+          opacity: 1
+        }));
+      } else if (shape.type === ToolType.ELLIPSE) {
+        const rx = Math.abs(shape.width || 0) / 2;
+        const ry = Math.abs(shape.height || 0) / 2;
+        layer.add(new Konva.Ellipse({
+          ...commonProps,
+          x: shape.x + (shape.width || 0) / 2,
+          y: shape.y + (shape.height || 0) / 2,
+          radiusX: rx, radiusY: ry,
+          fill: hexToRgba(shape.fill, shape.opacity),
+          opacity: 1
+        }));
+      } else if (shape.type === ToolType.LINE || shape.type === ToolType.PEN || shape.type === ToolType.ERASER) {
+        layer.add(new Konva.Line({
+          ...commonProps,
+          points: shape.points || [],
+          lineCap: 'round', lineJoin: 'round',
+          tension: shape.type === ToolType.PEN ? 0.5 : 0
+        }));
+      } else if (shape.type === ToolType.ARROW) {
+        layer.add(new Konva.Arrow({
+          ...commonProps,
+          points: shape.points || [],
+          fill: shape.stroke,
+          pointerLength: 10, pointerWidth: 10
+        }));
+      } else if (shape.type === ToolType.TEXT) {
+        layer.add(new Konva.Text({
+          x: shape.x, y: shape.y,
+          text: shape.text || '',
+          fontSize: shape.fontSize || 16,
+          fontFamily: shape.fontFamily || 'Inter',
+          fontStyle: shape.fontStyle || 'normal',
+          fill: shape.fill !== 'transparent' ? shape.fill : shape.stroke,
+          opacity: shape.opacity
+        }));
+      } else if (shape.type === ToolType.MEASURE) {
+        const points = shape.points || [0, 0, 0, 0];
+        // Arrow
+        layer.add(new Konva.Arrow({
+          ...commonProps,
+          points: points,
+          fill: shape.stroke,
+          pointerLength: 10, pointerWidth: 10,
+          pointerAtBeginning: true
+        }));
+        // Text
+        const dist = getDistance(points);
+        const label = getMeasurementLabel(dist, shape.unit);
+        const midX = (points[0] + points[2]) / 2;
+        const midY = (points[1] + points[3]) / 2;
+        layer.add(new Konva.Text({
+          x: midX, y: midY - 15,
+          text: label,
+          fontSize: 14,
+          fontFamily: 'Inter',
+          fontStyle: 'bold',
+          fill: shape.stroke,
+          align: 'center'
+        }));
+      } else if (shape.type === ToolType.ANGLE && shape.points) {
+        const { angle, rotation, labelX, labelY, v, p1, p3 } = calculateAngleData(shape.points);
+        // Line 1
+        layer.add(new Konva.Line({ ...commonProps, points: [v.x, v.y, p1.x, p1.y], lineCap: 'round' }));
+        // Line 2
+        layer.add(new Konva.Line({ ...commonProps, points: [v.x, v.y, p3.x, p3.y], lineCap: 'round' }));
+        // Arc
+        layer.add(new Konva.Arc({
+          x: v.x, y: v.y,
+          innerRadius: 0, outerRadius: 24,
+          angle: angle, rotation: rotation,
+          stroke: shape.stroke, strokeWidth: 1,
+          fill: hexToRgba(shape.stroke, 0.2),
+          opacity: 1
+        }));
+        // Label
+        layer.add(new Konva.Text({
+          x: labelX, y: labelY,
+          text: `${angle.toFixed(1)}°`,
+          fontSize: 14, fontFamily: 'Inter', fontStyle: 'bold',
+          fill: shape.stroke,
+          width: 100, align: 'center', offsetX: 50, offsetY: 10
+        }));
+      }
+    });
   };
 
   // Perform Multi-Page Export
   const performExport = async () => {
     if (!exportName || !pdfDoc) return;
-    
+
     setIsExporting(true);
     await new Promise(r => setTimeout(r, 50));
 
     try {
-        const numPages = pdfDoc.numPages;
-        const renderScale = 2; 
-        
-        const pdf = new jsPDF({
-            orientation: 'p',
-            unit: 'px',
-            hotfixes: ['px_scaling'] 
-        });
-        
-        pdf.deletePage(1);
+      const numPages = pdfDoc.numPages;
+      const renderScale = 2;
 
-        for (let i = 1; i <= numPages; i++) {
-            // 1. Render PDF Page High Res
-            const page = await pdfDoc.getPage(i);
-            const viewport = page.getViewport({ scale: renderScale });
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const ctx = canvas.getContext('2d');
-            
-            if (!ctx) continue;
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'px',
+        hotfixes: ['px_scaling']
+      });
 
-            // Render PDF background
-            await page.render({ canvasContext: ctx, viewport }).promise;
+      pdf.deletePage(1);
 
-            // 2. Render Annotations via Headless Konva
-            const pageShapes = shapes.filter(s => s.page === i && s.visible);
-            if (pageShapes.length > 0) {
-                 const tempDiv = document.createElement('div');
-                 const stage = new Konva.Stage({
-                     container: tempDiv,
-                     width: viewport.width,
-                     height: viewport.height,
-                     scale: { x: renderScale, y: renderScale }
-                 });
-                 const layer = new Konva.Layer();
-                 stage.add(layer);
-                 
-                 addShapesToLayer(layer, pageShapes);
-                 
-                 layer.draw();
-                 
-                 const konvaCanvas = layer.toCanvas();
-                 ctx.drawImage(konvaCanvas, 0, 0);
-                 stage.destroy();
-            }
+      for (let i = 1; i <= numPages; i++) {
+        // 1. Render PDF Page High Res
+        const page = await pdfDoc.getPage(i);
+        const viewport = page.getViewport({ scale: renderScale });
 
-            const imgData = canvas.toDataURL('image/jpeg', 0.85);
-            const pdfPageWidth = viewport.width / renderScale;
-            const pdfPageHeight = viewport.height / renderScale;
-            
-            pdf.addPage([pdfPageWidth, pdfPageHeight], pdfPageWidth > pdfPageHeight ? 'l' : 'p');
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) continue;
+
+        // Render PDF background
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        // 2. Render Annotations via Headless Konva
+        const pageShapes = shapes.filter(s => s.page === i && s.visible);
+        if (pageShapes.length > 0) {
+          const tempDiv = document.createElement('div');
+          const stage = new Konva.Stage({
+            container: tempDiv,
+            width: viewport.width,
+            height: viewport.height,
+            scale: { x: renderScale, y: renderScale }
+          });
+          const layer = new Konva.Layer();
+          stage.add(layer);
+
+          addShapesToLayer(layer, pageShapes);
+
+          layer.draw();
+
+          const konvaCanvas = layer.toCanvas();
+          ctx.drawImage(konvaCanvas, 0, 0);
+          stage.destroy();
         }
 
-        pdf.save(`${exportName}.pdf`);
-        setShowExportModal(false);
+        const imgData = canvas.toDataURL('image/jpeg', 0.85);
+        const pdfPageWidth = viewport.width / renderScale;
+        const pdfPageHeight = viewport.height / renderScale;
+
+        pdf.addPage([pdfPageWidth, pdfPageHeight], pdfPageWidth > pdfPageHeight ? 'l' : 'p');
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfPageWidth, pdfPageHeight);
+      }
+
+      pdf.save(`${exportName}.pdf`);
+      setShowExportModal(false);
     } catch (e) {
-        console.error("Export failed:", e);
-        alert("Failed to export PDF. Please try again.");
+      console.error("Export failed:", e);
+      alert("Failed to export PDF. Please try again.");
     } finally {
-        setIsExporting(false);
+      setIsExporting(false);
     }
   };
 
@@ -482,7 +586,7 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
         <h1 className="text-2xl font-bold text-white mb-2">Session File Lost</h1>
         <p className="text-gray-400 max-w-md mb-8">
           The PDF file is missing because it was not found in storage.
-          <br/>Please ensure you have created the 'project-files' bucket in Supabase.
+          <br />Please ensure you have created the 'project-files' bucket in Supabase.
         </p>
         <Button onClick={() => navigate('/projects')}>Return to Projects</Button>
       </div>
@@ -499,195 +603,195 @@ export const EditorPage: React.FC<{ user: User }> = ({ user }) => {
             <ChevronLeft size={20} /> <span className="hidden md:inline ml-1">Back</span>
           </Button>
           <div className="flex flex-col justify-center overflow-hidden">
-             <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm truncate max-w-[100px] md:max-w-[200px]">{project?.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded capitalize hidden sm:inline-block ${project?.status === 'saved' ? 'bg-green-900/30 text-green-400' : 'bg-dark-700 text-gray-400'}`}>
-                    {project?.status || 'Draft'}
-                </span>
-             </div>
-             <span className="text-[10px] text-gray-500 hidden sm:block">
-               {saving ? 'Saving...' : `Last saved ${lastSaved.toLocaleTimeString()}`}
-             </span>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm truncate max-w-[100px] md:max-w-[200px]">{project?.name}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded capitalize hidden sm:inline-block ${project?.status === 'saved' ? 'bg-green-900/30 text-green-400' : 'bg-dark-700 text-gray-400'}`}>
+                {project?.status || 'Draft'}
+              </span>
+            </div>
+            <span className="text-[10px] text-gray-500 hidden sm:block">
+              {saving ? 'Saving...' : `Last saved ${lastSaved.toLocaleTimeString()}`}
+            </span>
           </div>
         </div>
 
         {/* Center Desktop: Zoom & Page Nav (Hidden on Mobile/Tablet) */}
         <div className="hidden lg:flex items-center gap-4 absolute left-1/2 -translate-x-1/2">
-             <div className="flex items-center gap-2 bg-dark-700/50 rounded-lg p-1">
-                  <Button variant="ghost" size="sm" disabled={currentPage <= 1} onClick={() => renderPage(pdfDoc, currentPage - 1)} className="h-7 w-7 p-0">
-                    <ChevronLeft size={14} />
-                  </Button>
-                  <span className="text-xs w-16 text-center font-mono">Page {currentPage}/{pdfDoc?.numPages || 1}</span>
-                  <Button variant="ghost" size="sm" disabled={!pdfDoc || currentPage >= pdfDoc.numPages} onClick={() => renderPage(pdfDoc, currentPage + 1)} className="h-7 w-7 p-0">
-                    <ChevronRight size={14} />
-                  </Button>
-             </div>
+          <div className="flex items-center gap-2 bg-dark-700/50 rounded-lg p-1">
+            <Button variant="ghost" size="sm" disabled={currentPage <= 1} onClick={() => renderPage(pdfDoc, currentPage - 1)} className="h-7 w-7 p-0">
+              <ChevronLeft size={14} />
+            </Button>
+            <span className="text-xs w-16 text-center font-mono">Page {currentPage}/{pdfDoc?.numPages || 1}</span>
+            <Button variant="ghost" size="sm" disabled={!pdfDoc || currentPage >= pdfDoc.numPages} onClick={() => renderPage(pdfDoc, currentPage + 1)} className="h-7 w-7 p-0">
+              <ChevronRight size={14} />
+            </Button>
+          </div>
 
-             <div className="flex items-center gap-2 bg-dark-700/50 rounded-lg p-1">
-                  <button className="p-1 hover:text-white text-gray-400 h-7 w-7 flex items-center justify-center" onClick={() => setStageScale(s => Math.max(0.1, s - 0.1))}><ZoomOut size={14} /></button>
-                  <span className="text-xs w-10 text-center font-mono">{Math.round(stageScale * 100)}%</span>
-                  <button className="p-1 hover:text-white text-gray-400 h-7 w-7 flex items-center justify-center" onClick={() => setStageScale(s => s + 0.1)}><ZoomIn size={14} /></button>
-                  <button className="p-1 hover:text-white text-gray-400 h-7 w-7 flex items-center justify-center border-l border-dark-600 ml-1 pl-2" onClick={() => setFitTrigger(n => n + 1)}><Maximize size={14} /></button>
-             </div>
+          <div className="flex items-center gap-2 bg-dark-700/50 rounded-lg p-1">
+            <button className="p-1 hover:text-white text-gray-400 h-7 w-7 flex items-center justify-center" onClick={() => setStageScale(s => Math.max(0.1, s - 0.1))}><ZoomOut size={14} /></button>
+            <span className="text-xs w-10 text-center font-mono">{Math.round(stageScale * 100)}%</span>
+            <button className="p-1 hover:text-white text-gray-400 h-7 w-7 flex items-center justify-center" onClick={() => setStageScale(s => s + 0.1)}><ZoomIn size={14} /></button>
+            <button className="p-1 hover:text-white text-gray-400 h-7 w-7 flex items-center justify-center border-l border-dark-600 ml-1 pl-2" onClick={() => setFitTrigger(n => n + 1)}><Maximize size={14} /></button>
+          </div>
         </div>
 
         {/* Right: Actions */}
         <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
-            {/* Undo/Redo */}
-            <div className="flex items-center gap-0.5 bg-dark-700 rounded-lg p-0.5">
-               <button 
-                 onClick={handleUndo} 
-                 disabled={historyStep <= 0}
-                 className={`p-1.5 rounded ${historyStep > 0 ? 'hover:bg-dark-600 text-gray-200' : 'text-gray-600 cursor-not-allowed'}`}
-                 title="Undo"
-               >
-                 <Undo size={16} />
-               </button>
-               <button 
-                 onClick={handleRedo} 
-                 disabled={historyStep >= history.length - 1}
-                 className={`p-1.5 rounded ${historyStep < history.length - 1 ? 'hover:bg-dark-600 text-gray-200' : 'text-gray-600 cursor-not-allowed'}`}
-                 title="Redo"
-               >
-                 <Redo size={16} />
-               </button>
-            </div>
+          {/* Undo/Redo */}
+          <div className="flex items-center gap-0.5 bg-dark-700 rounded-lg p-0.5">
+            <button
+              onClick={handleUndo}
+              disabled={historyStep <= 0}
+              className={`p-1.5 rounded ${historyStep > 0 ? 'hover:bg-dark-600 text-gray-200' : 'text-gray-600 cursor-not-allowed'}`}
+              title="Undo"
+            >
+              <Undo size={16} />
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={historyStep >= history.length - 1}
+              className={`p-1.5 rounded ${historyStep < history.length - 1 ? 'hover:bg-dark-600 text-gray-200' : 'text-gray-600 cursor-not-allowed'}`}
+              title="Redo"
+            >
+              <Redo size={16} />
+            </button>
+          </div>
 
-            <Button variant="secondary" size="sm" onClick={handleSaveProject} className="px-2 h-8">
-                {project?.status === 'saved' ? <CheckCircle2 size={16} className="text-green-500" /> : <Save size={16} />} 
-                <span className="hidden lg:inline ml-2">{project?.status === 'saved' ? 'Saved' : 'Save'}</span>
-            </Button>
-            <Button variant="primary" size="sm" onClick={openExportModal} className="px-2 h-8" isLoading={isExporting}>
-                <Download size={16} /> <span className="hidden lg:inline ml-2">Export</span>
-            </Button>
-           
-           <button 
-             onClick={() => setShowProperties(!showProperties)}
-             className={`h-8 w-8 flex items-center justify-center rounded-lg transition-colors ${showProperties ? 'bg-brand-600 text-white' : 'bg-dark-700 text-gray-400 hover:text-white'}`}
-           >
-             {showProperties ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
-           </button>
+          <Button variant="secondary" size="sm" onClick={handleSaveProject} className="px-2 h-8">
+            {project?.status === 'saved' ? <CheckCircle2 size={16} className="text-green-500" /> : <Save size={16} />}
+            <span className="hidden lg:inline ml-2">{project?.status === 'saved' ? 'Saved' : 'Save'}</span>
+          </Button>
+          <Button variant="primary" size="sm" onClick={openExportModal} className="px-2 h-8" isLoading={isExporting}>
+            <Download size={16} /> <span className="hidden lg:inline ml-2">Export</span>
+          </Button>
+
+          <button
+            onClick={() => setShowProperties(!showProperties)}
+            className={`h-8 w-8 flex items-center justify-center rounded-lg transition-colors ${showProperties ? 'bg-brand-600 text-white' : 'bg-dark-700 text-gray-400 hover:text-white'}`}
+          >
+            {showProperties ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+          </button>
         </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden relative min-h-0">
         <EditorToolbar currentTool={currentTool} setTool={setCurrentTool} />
-        
+
         {/* Center Canvas Area + Mobile Controls */}
         <div className="flex-1 flex flex-col relative overflow-hidden bg-neutral-900/90 min-h-0">
-             <div className="flex-1 relative overflow-hidden flex flex-col w-full h-full min-h-0">
-                {isRendering && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
-                         <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                )}
-                <Canvas 
-                  stageRef={stageRef}
-                  bgImage={bgImage}
-                  pdfDimensions={pdfDimensions}
-                  shapes={shapes}
-                  currentTool={currentTool}
-                  currentPage={currentPage}
-                  defaultStyles={defaultStyles}
-                  onShapeAdd={handleShapeAdd}
-                  onShapeUpdate={handleShapeUpdate}
-                  onShapeRemove={handleDelete}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  stageScale={stageScale}
-                  stagePos={stagePos}
-                  setStageScale={setStageScale}
-                  setStagePos={setStagePos}
-                  fitTrigger={fitTrigger}
-                />
-             </div>
+          <div className="flex-1 relative overflow-hidden flex flex-col w-full h-full min-h-0">
+            {isRendering && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+                <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            )}
+            <Canvas
+              stageRef={stageRef}
+              bgImage={bgImage}
+              pdfDimensions={pdfDimensions}
+              shapes={shapes}
+              currentTool={currentTool}
+              currentPage={currentPage}
+              defaultStyles={defaultStyles}
+              onShapeAdd={handleShapeAdd}
+              onShapeUpdate={handleShapeUpdate}
+              onShapeRemove={handleDelete}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              stageScale={stageScale}
+              stagePos={stagePos}
+              setStageScale={setStageScale}
+              setStagePos={setStagePos}
+              fitTrigger={fitTrigger}
+            />
+          </div>
 
-             {/* Mobile/Tablet Bottom Bar (Visible < lg) - Fixed at bottom of canvas area */}
-             <div className="lg:hidden shrink-0 h-14 bg-dark-800 border-t border-dark-700 flex items-center justify-between px-4 z-30">
-                 {/* Page Nav */}
-                 <div className="flex items-center gap-2">
-                      <button disabled={currentPage <= 1} onClick={() => renderPage(pdfDoc, currentPage - 1)} className="p-2 rounded-lg hover:bg-dark-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-gray-300">
-                        <ChevronLeft size={20} />
-                      </button>
-                      <span className="text-sm font-medium w-16 text-center text-gray-300 font-mono">
-                         {currentPage} / {pdfDoc?.numPages || 1}
-                      </span>
-                      <button disabled={!pdfDoc || currentPage >= pdfDoc.numPages} onClick={() => renderPage(pdfDoc, currentPage + 1)} className="p-2 rounded-lg hover:bg-dark-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-gray-300">
-                        <ChevronRight size={20} />
-                      </button>
-                 </div>
-
-                 <div className="w-px h-6 bg-dark-700 mx-2"></div>
-
-                 {/* Zoom Controls */}
-                 <div className="flex items-center gap-2">
-                      <button onClick={() => setStageScale(s => Math.max(0.1, s - 0.1))} className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-300">
-                         <ZoomOut size={20} />
-                      </button>
-                      <span className="text-sm font-medium w-12 text-center text-gray-300 font-mono">{Math.round(stageScale * 100)}%</span>
-                      <button onClick={() => setStageScale(s => s + 0.1)} className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-300">
-                         <ZoomIn size={20} />
-                      </button>
-                      <button onClick={() => setFitTrigger(n => n + 1)} className="p-2 rounded-lg hover:bg-dark-700 text-brand-400 transition-colors ml-1">
-                         <Maximize size={20} />
-                      </button>
-                 </div>
+          {/* Mobile/Tablet Bottom Bar (Visible < lg) - Fixed at bottom of canvas area */}
+          <div className="lg:hidden shrink-0 h-14 bg-dark-800 border-t border-dark-700 flex items-center justify-between px-4 z-30">
+            {/* Page Nav */}
+            <div className="flex items-center gap-2">
+              <button disabled={currentPage <= 1} onClick={() => renderPage(pdfDoc, currentPage - 1)} className="p-2 rounded-lg hover:bg-dark-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-gray-300">
+                <ChevronLeft size={20} />
+              </button>
+              <span className="text-sm font-medium w-16 text-center text-gray-300 font-mono">
+                {currentPage} / {pdfDoc?.numPages || 1}
+              </span>
+              <button disabled={!pdfDoc || currentPage >= pdfDoc.numPages} onClick={() => renderPage(pdfDoc, currentPage + 1)} className="p-2 rounded-lg hover:bg-dark-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors text-gray-300">
+                <ChevronRight size={20} />
+              </button>
             </div>
+
+            <div className="w-px h-6 bg-dark-700 mx-2"></div>
+
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setStageScale(s => Math.max(0.1, s - 0.1))} className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-300">
+                <ZoomOut size={20} />
+              </button>
+              <span className="text-sm font-medium w-12 text-center text-gray-300 font-mono">{Math.round(stageScale * 100)}%</span>
+              <button onClick={() => setStageScale(s => s + 0.1)} className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-gray-300">
+                <ZoomIn size={20} />
+              </button>
+              <button onClick={() => setFitTrigger(n => n + 1)} className="p-2 rounded-lg hover:bg-dark-700 text-brand-400 transition-colors ml-1">
+                <Maximize size={20} />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Collapsible Properties Panel - Absolute overlay on mobile, static on desktop */}
         {showProperties && (
           <div className="absolute right-0 top-0 bottom-0 z-40 md:relative md:z-0 h-full shadow-2xl md:shadow-none w-[85vw] max-w-sm md:w-64 shrink-0 flex flex-col bg-dark-800 border-l border-dark-700 animate-in slide-in-from-right-10 duration-200">
-             {/* Mobile Close Button */}
-             <div className="md:hidden flex justify-between items-center p-3 border-b border-dark-700 bg-dark-800/95 backdrop-blur shrink-0">
-                <span className="text-sm font-semibold text-white">Properties</span>
-                <button onClick={() => setShowProperties(false)} className="p-2 text-gray-400 hover:text-white bg-dark-700 rounded-lg">
-                  <X size={18}/>
-                </button>
-             </div>
-             <PropertiesPanel 
-                currentTool={currentTool}
-                selectedShape={selectedShape}
-                defaultStyles={defaultStyles}
-                setDefaultStyles={setDefaultStyles}
-                updateShape={(id, attrs) => handleShapeUpdate(id, attrs, true)} // Push to history
-                deleteShape={handleDelete}
-                layers={shapes}
-                selectShape={setSelectedId}
-              />
+            {/* Mobile Close Button */}
+            <div className="md:hidden flex justify-between items-center p-3 border-b border-dark-700 bg-dark-800/95 backdrop-blur shrink-0">
+              <span className="text-sm font-semibold text-white">Properties</span>
+              <button onClick={() => setShowProperties(false)} className="p-2 text-gray-400 hover:text-white bg-dark-700 rounded-lg">
+                <X size={18} />
+              </button>
+            </div>
+            <PropertiesPanel
+              currentTool={currentTool}
+              selectedShape={selectedShape}
+              defaultStyles={defaultStyles}
+              setDefaultStyles={setDefaultStyles}
+              updateShape={(id, attrs) => handleShapeUpdate(id, attrs, true)} // Push to history
+              deleteShape={handleDelete}
+              layers={shapes}
+              selectShape={setSelectedId}
+            />
           </div>
         )}
       </div>
-      
+
       {/* Export Modal */}
       {showExportModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-           <div className="bg-dark-800 border border-dark-700 p-6 rounded-2xl w-full max-w-sm shadow-2xl transform transition-all scale-100 opacity-100">
-              <div className="flex justify-between items-center mb-4">
-                 <h3 className="text-lg font-bold text-white">Export Full PDF</h3>
-                 <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-white"><X size={20} /></button>
-              </div>
-              <p className="text-gray-400 text-sm mb-4">
-                  Download high-quality PDF with annotations.<br/>
-                  <span className="text-xs text-gray-500">Includes all {pdfDoc?.numPages || 1} pages. Large files may take a moment.</span>
-              </p>
-              
-              <input
-                 value={exportName}
-                 onChange={e => setExportName(e.target.value)}
-                 onKeyDown={(e) => e.key === 'Enter' && performExport()}
-                 className="w-full bg-dark-900 border border-dark-600 rounded-lg p-3 mb-6 text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                 placeholder="filename"
-                 autoFocus
-              />
-              
-              <div className="flex gap-3">
-                 <Button variant="ghost" className="flex-1" onClick={() => setShowExportModal(false)}>Cancel</Button>
-                 <Button className="flex-1" onClick={performExport} isLoading={isExporting}>
-                    {isExporting ? 'Processing...' : 'Download PDF'}
-                 </Button>
-              </div>
-           </div>
+          <div className="bg-dark-800 border border-dark-700 p-6 rounded-2xl w-full max-w-sm shadow-2xl transform transition-all scale-100 opacity-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white">Export Full PDF</h3>
+              <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-white"><X size={20} /></button>
+            </div>
+            <p className="text-gray-400 text-sm mb-4">
+              Download high-quality PDF with annotations.<br />
+              <span className="text-xs text-gray-500">Includes all {pdfDoc?.numPages || 1} pages. Large files may take a moment.</span>
+            </p>
+
+            <input
+              value={exportName}
+              onChange={e => setExportName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && performExport()}
+              className="w-full bg-dark-900 border border-dark-600 rounded-lg p-3 mb-6 text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              placeholder="filename"
+              autoFocus
+            />
+
+            <div className="flex gap-3">
+              <Button variant="ghost" className="flex-1" onClick={() => setShowExportModal(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={performExport} isLoading={isExporting}>
+                {isExporting ? 'Processing...' : 'Download PDF'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
