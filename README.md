@@ -13,31 +13,84 @@ KABS allows users to:
 
 ## 🛠 Tech Stack
 
-*   **Frontend Library:** React 19
-*   **Language:** TypeScript
-*   **Styling:** Tailwind CSS
-*   **State Management:** React `useState` / `useEffect` + Context (implicit via props)
-*   **Canvas/Graphics:** `react-konva` (Canvas API wrapper)
-*   **PDF Handling:** `pdfjs-dist` (Rendering) & `jspdf` (Export generation)
-*   **Backend/Database:** Supabase (PostgreSQL, Auth, Storage)
-*   **Icons:** Lucide React
+*   **Core Framework:** React 18, TypeScript, Vite
+*   **Styling & UI:** Tailwind CSS, Framer Motion, Lucide React, Radix UI (Slot), Class Variance Authority (CVA), clsx, tailwind-merge
+*   **Graphics & Visualization:** Konva, React-Konva, use-image
+*   **AI Integration:** Google Generative AI (Gemini Flash 2.5)
+*   **Backend & Database:** Supabase (Auth, Storage, Database)
+*   **Routing:** React Router DOM
+*   **PDF Generation:** jsPDF
+*   **Utilities:** dotenv
 
-## 📂 Project Structure
+## 📦 Packages & Dependencies
 
+### Core Dependencies
+| Package | Version | Description |
+| :--- | :--- | :--- |
+| **react / react-dom** | `^18.2.0` | Core UI library. |
+| **react-router-dom** | `^6.20.0` | Client-side routing. |
+| **@supabase/supabase-js** | `^2.39.0` | Supabase client for Auth & DB. |
+| **konva / react-konva** | `^9.3.3` / `^18.2.10` | 2D Canvas graphics library. |
+| **@google/generative-ai** | `^0.24.1` | Google Gemini AI SDK. |
+| **framer-motion** | `^10.16.0` | Animation library. |
+| **jspdf** | `^4.0.0` | PDF generation library. |
+
+### Complete List
+**Production:**
+`@google/generative-ai`, `@motionone/utils`, `@radix-ui/react-slot`, `@supabase/supabase-js`, `class-variance-authority`, `clsx`, `framer-motion`, `jspdf`, `konva`, `lucide-react`, `react`, `react-dom`, `react-konva`, `react-router-dom`, `tailwind-merge`, `use-image`
+
+**Development:**
+`vite`, `typescript`, `tailwindcss`, `postcss`, `autoprefixer`, `dotenv`, `@vitejs/plugin-react`
+
+## � Languages & Technologies
+
+*   **TypeScript** (`.ts`, `.tsx`): Primary language for logic and UI (98% of codebase).
+*   **CSS / Tailwind**: Styling via utility classes and `globals.css`.
+*   **HTML5**: Semantic markup within React components.
+*   **SQL**: Database schema and RLS policies (Supabase).
+
+## �📂 Project Structure & Key Components
+
+### 🗂 Root Directory Structure
 ```
 /
-├── components/          # React UI Components
-│   ├── Editor/          # Core Editor Logic (Canvas, Toolbar, Properties)
-│   ├── Layout/          # Global layout (Navbar)
-│   └── ui/              # Reusable atoms (Buttons, etc.)
-├── services/            # API integration
-│   ├── supabase.ts      # Database client config
-│   ├── projectService.ts# CRUD operations for Projects
-│   └── pdfService.ts    # PDF rendering utilities
-├── types.ts             # Global TypeScript interfaces & Enums
-├── App.tsx              # Main Router and Auth State
-└── index.html           # Entry point
+├── components/          # React UI Components (Source of truth)
+├── services/            # API & Backend Integration
+├── lib/                 # Shared utilities
+├── App.tsx              # Main Router Configuration
+├── globals.css          # Global Styles & Tailwind Directives
+└── types.ts             # Global TS Interfaces
 ```
+
+### 🧩 Component Breakdown
+
+#### **1. Core Editor (`/components/Editor/`)**
+The heart of the application where users interact with plans.
+*   **`EditorPage.tsx`**: Main controller. Manages state, undo/redo history, and layout.
+*   **`Canvas.tsx`**: The visualization layer. Renders the PDF background and Konva vector layers (shapes, measurements).
+*   **`EditorToolbar.tsx`**: Floating toolbar containing tools (Select, Rectangle, Text, Measure).
+*   **`PropertiesPanel.tsx`**: Context-aware sidebar to edit properties of selected shapes (Color, Stroke, Text Size).
+
+#### **2. AI Integration (`/components/DrawingAI/`)**
+*   **`DrawingSuggestionAI.tsx`**: Main interface for the "Scout AI" feature.
+*   **`SuggestionsList.tsx`**: Renders AI-generated insights or detected codes.
+*   **`PDFViewer.tsx`**: Specialized viewer for AI context.
+
+#### **3. Admin & Management**
+*   **`AdminDashboard.tsx`**: Backend management for Manufacturers, Pricing Files, and NKBA Rules.
+*   **`AdminLogin.tsx`**: Dedicated secure login for administrators.
+*   **`ProjectList.tsx`**: The user's dashboard view, listing all their active projects.
+
+#### **4. Public & Pages**
+*   **`LandingPage.tsx`**: High-conversion landing page with Framer Motion animations.
+*   **`Auth.tsx`**: Handles User Signup, Login, and Password Reset.
+*   **`PricingPage.tsx` / `PaymentPage.tsx`**: Manages subscription tiers and payments.
+
+### 🔌 Services (`/services`)
+*   **`supabase.ts`**: Configures the Supabase client.
+*   **`projectService.ts`**: Handles all database interactions (CRUD for projects) and Storage (uploading PDFs).
+*   **`pdfService.ts`**: Utilities for rendering pages to images and exporting simplified PDFs.
+*   **`drawingAI.ts`**: Service layer communicating with Google Gemini API.
 
 ## 👩‍💻 Developer Guide
 
