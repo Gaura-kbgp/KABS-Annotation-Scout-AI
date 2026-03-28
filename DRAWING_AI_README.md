@@ -7,33 +7,39 @@ An intelligent NKBA (National Kitchen & Bath Association) standards validation s
 ## ✨ Features
 
 ### 🔍 **NKBA Standards Validation**
+
 - Automatically validates kitchen floor plans against NKBA guidelines
 - Identifies violations in:
   - Work triangle dimensions
-  - Clearances and walkways  
+  - Clearances and walkways
   - Landing spaces near appliances
   - Counter heights and depths
   - Cabinet spacing
   - Door swing clearances
 
 ### 📍 **Cabinet-Specific Locations**
+
 - Pinpoints issues to specific cabinet codes (e.g., "W3030", "B24")
 - Provides clear location descriptions
 - Shows current vs. required measurements
 
 ### 🎯 **Severity Levels**
+
 - **Critical**: Must be fixed for code compliance
 - **Warning**: Should be addressed for best practices
 - **Info**: Suggestions for optimization
 
 ### 👨‍💼 **Admin Panel**
+
 KABS administrators can:
+
 - Add, edit, and delete NKBA rules
 - Upload reference PDF documents
 - Manage reference images
 - Control rule severity and categories
 
 ### 📊 **Comprehensive Reports**
+
 - Download analysis results
 - Summary statistics (Critical/Warning/Info counts)
 - Detailed findings with measurements
@@ -42,23 +48,30 @@ KABS administrators can:
 ## 🚀 Quick Start
 
 ### 1. **Database Setup**
+
 Run the migration script in Supabase SQL Editor:
+
 ```sql
--- Execute: migration-scripts/drawing-ai-schema.sql
+-- Execute: migrations/drawing-ai-schema.sql
 ```
 
 ### 2. **Storage Buckets**
+
 Create two storage buckets in Supabase:
+
 - `drawings` - For uploaded floor plans (50MB, PDF only)
 - `documents` - For NKBA references (100MB, PDF + images)
 
 Or run:
+
 ```sql
--- Execute: migration-scripts/storage-buckets-setup.sql
+-- Execute: migrations/storage-buckets-setup.sql
 ```
 
 ### 3. **Admin Access**
+
 Make yourself an admin:
+
 ```sql
 INSERT INTO admin_users (user_id, role, permissions)
 SELECT 
@@ -69,7 +82,9 @@ WHERE email = 'your.email@example.com';
 ```
 
 ### 4. **Environment Variables**
+
 Ensure `.env.local` contains:
+
 ```env
 VITE_GEMINI_API_KEY=your_gemini_api_key_here
 ```
@@ -97,7 +112,7 @@ VITE_GEMINI_API_KEY=your_gemini_api_key_here
 
 ### Components
 
-```
+```text
 components/
 ├── DrawingSuggestionAI.tsx      # Main component
 └── DrawingAI/
@@ -108,14 +123,14 @@ components/
 
 ### Services
 
-```
+```text
 services/
 └── drawingAI.ts                 # AI analysis logic
 ```
 
 ### Database
 
-```
+```text
 Tables:
 ├── nkba_rules                   # NKBA standards
 ├── nkba_reference_images        # Reference images
@@ -138,7 +153,7 @@ Tables:
 ## 📋 Default NKBA Rules
 
 | Code | Title | Min Value | Severity |
-|------|-------|-----------|----------|
+| :--- | :--- | :--- | :--- |
 | NKBA-31 | Work Aisle Width | 42" | Warning |
 | NKBA-32 | Walkway Width | 36" | Warning |
 | NKBA-41 | Work Triangle Distance | - | Suggestion |
@@ -150,22 +165,26 @@ Tables:
 ## 🛠️ Troubleshooting
 
 ### Admin Panel Not Visible
+
 - Verify your email in `admin_users` table
 - Log out and log back in
 - Check browser console for errors
 
 ### File Upload Fails
+
 - Confirm storage buckets exist
 - Check storage policies are created
 - Verify bucket permissions
 
 ### AI Analysis Fails
+
 - Validate `VITE_GEMINI_API_KEY` is set
 - Check API key is active and valid
 - Verify NKBA rules exist in database
 - Check browser console for API errors
 
 ### No Suggestions Generated
+
 - Ensure PDF is a valid kitchen floor plan
 - Check that NKBA rules are loaded
 - Verify AI has access to analyze PDFs
@@ -200,6 +219,7 @@ Tables:
 ## 🤝 Support
 
 For issues or questions:
+
 1. Check browser console
 2. Verify Supabase connection
 3. Ensure API keys are valid
